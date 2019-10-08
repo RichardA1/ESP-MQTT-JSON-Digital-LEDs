@@ -15,41 +15,18 @@
         - Next, download the ESP8266 dependancies by going to Tools -> Board -> Board Manager and searching for ESP8266 and installing it.
   
   - You will also need to download the follow libraries by going to Sketch -> Include Libraries -> Manage Libraries
-      - FastLED 
-      - PubSubClient
-      - ArduinoJSON
+      - FastLED v3.3.2
+      - PubSubClient v2.5.0
+      - ArduinoJSON v5.13.5
 */
 
 #include <ArduinoJson.h>
-#include <ESP8266WiFi.h>
+#include <ESP8266WiFi.h> 
 #include <PubSubClient.h>
 #include "FastLED.h"
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
-#include <ArduinoOTA.h>
-
-
-
-/************ WIFI and MQTT Information (CHANGE THESE FOR YOUR SETUP) ******************/
-const char* ssid = "YourSSID"; //type your WIFI information inside the quotes
-const char* password = "YourWIFIpassword";
-const char* mqtt_server = "your.MQTT.server.ip";
-const char* mqtt_username = "yourMQTTusername";
-const char* mqtt_password = "yourMQTTpassword";
-const int mqtt_port = 1883;
-
-
-
-/**************************** FOR OTA **************************************************/
-#define SENSORNAME "porch" //change this to whatever you want to call your device
-#define OTApassword "yourOTApassword" //the password you will need to enter to upload remotely via the ArduinoIDE
-int OTAport = 8266;
-
-
-
-/************* MQTT TOPICS (change these topics as you wish)  **************************/
-const char* light_state_topic = "bruh/porch";
-const char* light_set_topic = "bruh/porch/set";
+#include "config.h"
 
 const char* on_cmd = "ON";
 const char* off_cmd = "OFF";
@@ -58,19 +35,15 @@ String effectString = "solid";
 String oldeffectString = "solid";
 
 
-
 /****************************************FOR JSON***************************************/
 const int BUFFER_SIZE = JSON_OBJECT_SIZE(10);
 #define MQTT_MAX_PACKET_SIZE 512
 
-
-
 /*********************************** FastLED Defintions ********************************/
-#define NUM_LEDS    186
+#define NUM_LEDS    75
 #define DATA_PIN    5
-//#define CLOCK_PIN 5
 #define CHIPSET     WS2811
-#define COLOR_ORDER BRG
+#define COLOR_ORDER GRB
 
 byte realRed = 0;
 byte realGreen = 0;
@@ -184,36 +157,11 @@ void setup() {
   setupStripedPalette( CRGB::Red, CRGB::Red, CRGB::White, CRGB::White); //for CANDY CANE
   gPal = HeatColors_p; //for FIRE
 
+  clientId += String(random(0xffff), HEX);
+
   setup_wifi();
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
-
-  //OTA SETUP
-  ArduinoOTA.setPort(OTAport);
-  // Hostname defaults to esp8266-[ChipID]
-  ArduinoOTA.setHostname(SENSORNAME);
-
-  // No authentication by default
-  ArduinoOTA.setPassword((const char *)OTApassword);
-
-  ArduinoOTA.onStart([]() {
-    Serial.println("Starting");
-  });
-  ArduinoOTA.onEnd([]() {
-    Serial.println("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-    else if (error == OTA_END_ERROR) Serial.println("End Failed");
-  });
-  ArduinoOTA.begin();
 
   Serial.println("Ready");
   Serial.print("IP Address: ");
@@ -385,7 +333,7 @@ bool processJson(char* message) {
     if (root.containsKey("color_temp")) {
       //temp comes in as mireds, need to convert to kelvin then to RGB
       int color_temp = root["color_temp"];
-      unsigned int kelvin  = MILLION / color_temp;
+      unsigned int kelvin  = 1000000 / color_temp;
       
       temp2rgb(kelvin);
       
@@ -445,10 +393,10 @@ void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect(SENSORNAME, mqtt_username, mqtt_password)) {
+    if (client.connect(clientId.c_str(), mqtt_username, mqtt_password)) {
       Serial.println("connected");
       client.subscribe(light_set_topic);
-      setColor(0, 0, 0);
+      //setColor(0, 0, 0);
       sendState();
     } else {
       Serial.print("failed, rc=");
@@ -500,9 +448,6 @@ void loop() {
 
 
   client.loop();
-
-  ArduinoOTA.handle();
-
 
   //EFFECT BPM
   if (effectString == "bpm") {
